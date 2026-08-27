@@ -1,0 +1,38 @@
+{
+  "name": "server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently -n user,chat,mail,gateway -c blue,green,yellow,magenta \"npm run dev:user\" \"npm run dev:chat\" \"npm run dev:mail\" \"npm run dev:gateway\"",
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start --workspaces --if-present",
+    "dev:user": "npm run dev -w @server/user",
+    "dev:chat": "npm run dev -w @server/chat",
+    "dev:mail": "npm run dev -w @server/mail",
+    "dev:gateway": "npm run dev -w @server/gateway"
+  },
+  "keywords": [],
+  "author": "icoderarely",
+  "license": "ISC",
+  "type": "module",
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.6",
+    "@types/mongoose": "^5.11.96",
+    "concurrently": "^10.0.5",
+    "nodemon": "^3.1.14",
+    "tsc-alias": "^1.9.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@server/shared": "^1.0.0",
+    "dotenv": "^17.4.2"
+  }
+}

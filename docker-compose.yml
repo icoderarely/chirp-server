@@ -1,0 +1,31 @@
+networks:
+  chirp-network:
+    driver: bridge
+
+services:
+  mongo:
+    image: mongo:8
+    container_name: chirp-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    networks:
+      - chirp-network
+
+  redis:
+    image: redis:8
+    container_name: chirp-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - chirp-network
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:
