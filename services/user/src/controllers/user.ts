@@ -1,10 +1,9 @@
 import User from "@/model/User.js";
-import { publishToQueue, TryCatch } from "@server/shared";
+import { generateToken, publishToQueue, TryCatch } from "@server/shared";
 import { type Request, type Response } from "express";
 import redisClient from "@/config/redis.js";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import { generateToken } from "@/utils/generateToken.js";
 
 const LOGIN_MAX_ATTEMPTS = 3;
 const LOGIN_WINDOW_SECONDS = 60;
