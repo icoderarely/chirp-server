@@ -1,15 +1,15 @@
+import "dotenv/config";
 import express from "express";
 import { logger, connectToRabbitMQ } from "@server/shared";
-import "dotenv/config";
 import cors from "cors";
 
-import connectDB from "@/config/db.js";
+import { connectDB } from "@/config/db.js";
 import redisClient from "@/config/redis.js";
 import userRoutes from "@/routes/user.js";
 
 const app = express();
 
-connectDB();
+await connectDB();
 redisClient.connect();
 await connectToRabbitMQ();
 

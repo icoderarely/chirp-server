@@ -2,6 +2,7 @@ import { TryCatch } from "@server/shared";
 import type { Request, Response } from "express";
 import axios from "axios";
 import Chat from "@/models/Chat.js";
+import Message from "@/models/Message.js";
 import mongoose from "mongoose";
 
 export const createChat = TryCatch(async (req: Request, res: Response) => {
@@ -19,8 +20,19 @@ export const createChat = TryCatch(async (req: Request, res: Response) => {
   // Ask User Service to resolve username -> userId
   const userResponse = await axios.get(
     `${process.env.USER_SERVICE_URL}/users/${normalizedUsername}`,
+    {
+      headers: {
+        Authorization: req.headers.authorization ?? "",
+      },
+    },
   );
-  const otherUserId = userResponse.data.userId;
+  const otherUserId = userResponse.data.user?._id ?? userResponse.data.userId;
+  if (!otherUserId) {
+    res.status(404).json({
+      message: "User not found",
+    });
+    return;
+  }
 
   const existingChat = await Chat.findOne({
     members: {
@@ -57,11 +69,51 @@ export const getChats = TryCatch(async (req: Request, res: Response) => {
 
   const chats = await Chat.find({
     members: myUserId,
-  }).sort({ updatedAt: -1 });
+  })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  if (chats.length === 0) {
+    res.status(200).json({
+      message: "Chats fetched successfully",
+      chats: [],
+    });
+    return;
+  }
+
+  const unseenCounts = await Message.aggregate<{
+    _id: mongoose.Types.ObjectId;
+    count: number;
+  }>([
+    {
+      $match: {
+        chatId: { $in: chats.map((chat) => chat._id) },
+        sender: { $ne: myUserId },
+        seen: false,
+      },
+    },
+    {
+      $group: {
+        _id: "$chatId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const unseenByChatId = new Map(
+    unseenCounts.map((row) => [row._id.toString(), row.count]),
+  );
 
   res.status(200).json({
     message: "Chats fetched successfully",
-    chats: chats.map((chat) => chat._id.toString()),
+    chats: chats.map((chat) => {
+      const otherMemberId = chat.members.find((member) => member !== myUserId);
+      return {
+        ...chat,
+        otherMemberId,
+        unseenCount: unseenByChatId.get(chat._id.toString()) ?? 0,
+      };
+    }),
   });
 });
 

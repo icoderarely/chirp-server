@@ -5,6 +5,7 @@ export interface IUser {
   username: string;
   email: string;
   password: string;
+  verified: boolean;
 }
 
 const userSchema = new Schema<IUser>(
@@ -36,6 +37,10 @@ const userSchema = new Schema<IUser>(
       required: true,
       minlength: 6,
       select: false,
+    },
+    verified: {
+      type: Boolean,
+      default: false,
     },
   },
   {

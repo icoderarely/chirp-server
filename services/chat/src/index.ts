@@ -1,8 +1,9 @@
+import "dotenv/config";
 import express from "express";
 import { logger } from "@server/shared";
-import "dotenv/config";
-import { connectDB } from "./config/db.js";
-import chatRoutes from "./routes/chat.js";
+import { connectDB } from "@/config/db.js";
+import chatRoutes from "@/routes/chat.js";
+import messageRoutes from "@/routes/message.js";
 
 const PORT = process.env.PORT || 3003;
 
@@ -17,6 +18,7 @@ connectDB();
 
 // Routes
 app.use("/chat", chatRoutes);
+app.use("/messages", messageRoutes);
 
 app.listen(PORT, () => {
   logger.info(`Chat service is running on port ${PORT}`);

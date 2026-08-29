@@ -166,6 +166,7 @@ export const verifyOtp = TryCatch(async (req: Request, res: Response) => {
     username: pendingUsername,
     email,
     password: hashedPassword,
+    verified: true,
   });
 
   // Clean up so the OTP can't be replayed and the pending data doesn't linger.

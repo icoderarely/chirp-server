@@ -33,4 +33,6 @@ const chatSchema = new Schema<IChat>(
   },
 );
 
+chatSchema.index({ members: 1 });
+
 export default mongoose.model<IChat>("Chat", chatSchema);

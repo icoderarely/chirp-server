@@ -1,4 +1,4 @@
-import { verifyToken } from "@/utils/generateToken.js";
+import { verifyToken } from "@server/shared";
 import type { NextFunction, Request, Response } from "express";
 import type { JwtPayload } from "jsonwebtoken";
 
