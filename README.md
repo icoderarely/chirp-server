@@ -2,36 +2,33 @@
 
 Backend for Chirp, a chat application. This is an npm workspaces monorepo of TypeScript microservices that share MongoDB, Redis, and RabbitMQ.
 
+Clients talk to the **API gateway** on port `3000`. Do not call user (`:3001`) or chat (`:3003`) from the browser.
+
 ## Architecture
 
-```
-Client
-  │
-  ▼
-┌─────────────┐     REST      ┌──────────────┐     publish      ┌──────────────┐
-│   Gateway   │ ─────────────▶│ User service │ ── send-otp ───▶ │ Mail service │
-│  (planned)  │               │   :3001      │                  │    :3002     │
-└─────────────┘               └──────────────┘                  └──────────────┘
-       │                             ▲                                 │
-       │                      GET /users/:username                Gmail SMTP
-       ▼                             │
-┌──────────────┐              MongoDB / Redis
-│ Chat service │ ── Cloudinary (images)
-│    :3003     │
-└──────────────┘
-       │
-    MongoDB
-```
+![Chirp architecture](docs/architecture.png)
 
-| Workspace | Package | Role |
-| --- | --- | --- |
-| `services/user` | `@server/user` | Auth, registration, profiles |
-| `services/mail` | `@server/mail` | Consumes `send-otp` and emails OTPs |
-| `services/chat` | `@server/chat` | Chats, messages, image uploads, unseen counts |
-| `services/gateway` | `@server/gateway` | Planned — not implemented yet |
-| `packages/shared` | `@server/shared` | Logger, `TryCatch`, JWT helpers, RabbitMQ |
+Mail is RabbitMQ-only (OTP emails). It is not proxied through the gateway. WebSockets are not implemented yet; chat is request/response only.
+
+| Workspace          | Package           | Role                                          |
+| ------------------ | ----------------- | --------------------------------------------- |
+| `services/gateway` | `@server/gateway` | JWT at the edge, rate limit, proxy to services |
+| `services/user`    | `@server/user`    | Auth, registration, profiles                  |
+| `services/mail`    | `@server/mail`    | Consumes `send-otp` and emails OTPs           |
+| `services/chat`    | `@server/chat`    | Chats, messages, image uploads, unseen counts |
+| `packages/shared`  | `@server/shared`  | Logger, `TryCatch`, JWT helpers, error handler, RabbitMQ |
 
 Registration is two-step: the user service stores pending signup data and an OTP in Redis, publishes to the `send-otp` queue, then creates the MongoDB user only after OTP verification.
+
+## Auth
+
+1. The client sends `Authorization: Bearer <jwt>` to the gateway.
+2. The gateway verifies the token (`JWT_SECRET`, claim `userId`) on every proxied route except login, register, and verify-otp.
+3. The proxy forwards `x-internal-secret` (gateway `INTERNAL_SECRET`) and `x-user-id` to downstream services.
+4. **Chat** trusts those headers only (`trustGateway`). A direct call to `:3003` with only a Bearer token is rejected.
+5. **User** trusts the same headers for `my-profile`, `update-user`, and `/:username`. If the request did not come through the gateway (chat’s username lookup), it falls back to verifying the Bearer JWT.
+
+`INTERNAL_SECRET` on gateway, user, and chat must be the same value. `JWT_SECRET` on gateway and user must match so the gateway can verify tokens issued at login.
 
 ## Prerequisites
 
@@ -48,74 +45,31 @@ npm install
 docker compose up -d
 ```
 
-Create a `.env` in each service that needs one. Do not commit these files.
+Copy each workspace `.env.example` to `.env` and fill in the placeholders (`INTERNAL_SECRET` and `JWT_SECRET` must match across the services that share them — see [Auth](#auth)):
 
-**`services/user/.env`**
-
-```env
-SERVICE_NAME=user
-PORT=3001
-
-MONGODB_URI=mongodb://admin:password@localhost:27017/chirp?authSource=admin
-REDIS_URL=redis://localhost:6379
-RABBITMQ_URL=amqp://admin:admin123@localhost:5672
-JWT_SECRET=replace-with-a-long-random-secret
-JWT_EXPIRES_IN=1d
+```bash
+cp services/gateway/.env.example services/gateway/.env
+cp services/user/.env.example services/user/.env
+cp services/chat/.env.example services/chat/.env
+cp services/mail/.env.example services/mail/.env
+cp packages/shared/.env.example packages/shared/.env
 ```
 
-**`services/mail/.env`**
-
-```env
-PORT=3002
-
-EMAIL_USER=your-gmail@example.com
-EMAIL_PASSWORD=your-gmail-app-password
-
-RABBITMQ_URL=amqp://admin:admin123@localhost:5672
-```
-
-Mail uses Gmail via Nodemailer. `EMAIL_PASSWORD` must be a [Gmail App Password](https://support.google.com/accounts/answer/185833), not the account password.
-
-**`services/chat/.env`**
-
-```env
-PORT=3003
-
-MONGODB_URI=mongodb://admin:password@localhost:27017/chirp?authSource=admin
-
-JWT_SECRET=replace-with-the-same-secret-as-user
-JWT_EXPIRES_IN=1d
-
-USER_SERVICE_URL=http://localhost:3001
-
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-api-key
-CLOUDINARY_API_SECRET=your-api-secret
-```
-
-`JWT_SECRET` must match the user service so chat can verify tokens issued at login. Chat resolves usernames by calling the user service and forwards the caller's Bearer token.
-
-**`packages/shared/.env`**
-
-```env
-RABBITMQ_URL=amqp://admin:admin123@localhost:5672
-```
-
-Docker Compose credentials for MongoDB are `admin` / `password`. Redis has no password in local compose.
+Do not commit the `.env` files. Mail uses Gmail via Nodemailer; `EMAIL_PASSWORD` must be a [Gmail App Password](https://support.google.com/accounts/answer/185833). Docker Compose MongoDB credentials are `admin` / `password`. Redis has no password in local compose.
 
 ## Scripts
 
 From `server/`:
 
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start user, chat, mail, and gateway together |
-| `npm run dev:user` | User service only (`tsx watch`) |
-| `npm run dev:mail` | Mail service only |
-| `npm run dev:chat` | Chat service only |
-| `npm run dev:gateway` | Gateway only |
-| `npm run build` | Compile every workspace that has a build script |
-| `npm run start` | Run compiled `dist/` output |
+| Command               | Description                                     |
+| --------------------- | ----------------------------------------------- |
+| `npm run dev`         | Start user, chat, mail, and gateway together    |
+| `npm run dev:user`    | User service only (`tsx watch`)                 |
+| `npm run dev:mail`    | Mail service only                               |
+| `npm run dev:chat`    | Chat service only                               |
+| `npm run dev:gateway` | Gateway only                                    |
+| `npm run build`       | Compile every workspace that has a build script |
+| `npm run start`       | Run compiled `dist/` output                     |
 
 A single service:
 
@@ -123,20 +77,35 @@ A single service:
 npm run dev -w @server/user
 ```
 
+## Gateway
+
+Base URL: `http://localhost:3000`
+
+| Method | Path             | Auth   | Downstream                         |
+| ------ | ---------------- | ------ | ---------------------------------- |
+| `GET`  | `/health`        | No     | Gateway itself                     |
+| `*`    | `/api/users/*`   | JWT\*  | User `http://localhost:3001/users` |
+| `*`    | `/api/chats/*`   | JWT    | Chat `http://localhost:3003/chat`  |
+| `*`    | `/api/messages/*`| JWT    | Chat `http://localhost:3003/messages` |
+
+\* `/api/users/login`, `/api/users/register`, and `/api/users/verify-otp` skip JWT auth.
+
+If a downstream service is down, the gateway returns `502` with `{ "message": "<name> service unavailable" }`.
+
 ## User API
 
-Base URL: `http://localhost:3001/users`
+Client base URL: `http://localhost:3000/api/users`
 
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| `POST` | `/register` | No | Start signup; sends OTP |
-| `POST` | `/verify-otp` | No | Confirm OTP and create the user |
-| `POST` | `/login` | No | Return a JWT |
-| `GET` | `/my-profile` | Bearer | Current user |
-| `PUT` | `/update-user` | Bearer | Update `name` and/or `username` |
-| `GET` | `/:username` | Bearer | Look up a user |
+| Method | Path           | Auth   | Description                     |
+| ------ | -------------- | ------ | ------------------------------- |
+| `POST` | `/register`    | No     | Start signup; sends OTP         |
+| `POST` | `/verify-otp`  | No     | Confirm OTP and create the user |
+| `POST` | `/login`       | No     | Return a JWT                    |
+| `GET`  | `/my-profile`  | Bearer | Current user                    |
+| `PUT`  | `/update-user` | Bearer | Update `name` and/or `username` |
+| `GET`  | `/:username`   | Bearer | Look up a user                  |
 
-Protected routes expect:
+Protected client routes expect:
 
 ```http
 Authorization: Bearer <token>
@@ -145,7 +114,7 @@ Authorization: Bearer <token>
 ### Register
 
 ```http
-POST /users/register
+POST /api/users/register
 Content-Type: application/json
 
 {
@@ -161,7 +130,7 @@ Pending registration and the OTP expire after 5 minutes. OTP guesses are limited
 ### Verify OTP
 
 ```http
-POST /users/verify-otp
+POST /api/users/verify-otp
 Content-Type: application/json
 
 {
@@ -175,7 +144,7 @@ Returns the user (without password) and a JWT.
 ### Login
 
 ```http
-POST /users/login
+POST /api/users/login
 Content-Type: application/json
 
 {
@@ -188,43 +157,43 @@ Login is rate-limited to 3 attempts per username per 60 seconds (Redis).
 
 ## Chat API
 
-Base URL: `http://localhost:3003/chat`
+Client base URL: `http://localhost:3000/api/chats`
 
 All routes require `Authorization: Bearer <token>`.
 
-| Method | Path | Description |
-| --- | --- | --- |
+| Method | Path         | Description                                              |
+| ------ | ------------ | -------------------------------------------------------- |
 | `POST` | `/:username` | Create a chat with that user, or return the existing one |
-| `GET` | `/` | List the caller's chats, newest first |
-| `GET` | `/:chatId` | Fetch one chat the caller belongs to |
+| `GET`  | `/`          | List the caller's chats, newest first                    |
+| `GET`  | `/:chatId`   | Fetch one chat the caller belongs to                     |
 
-`GET /chat` includes `lastMessage`, `otherMemberId`, and `unseenCount` (messages from the other member with `seen: false`).
+`GET /api/chats` includes `lastMessage`, `otherMemberId`, and `unseenCount` (messages from the other member with `seen: false`).
 
 ```http
-POST /chat/ada
+POST /api/chats/ada
 Authorization: Bearer <token>
 ```
 
-Creating a chat looks up `ada` on the user service (`GET /users/ada`) using the same token.
+Creating a chat looks up `ada` on the user service (`GET /users/ada`) using the same token. That hop is service-to-service and does not go through the gateway.
 
 ## Messages API
 
-Base URL: `http://localhost:3003/messages`
+Client base URL: `http://localhost:3000/api/messages`
 
 All routes require `Authorization: Bearer <token>`. The caller must be a member of the chat.
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `POST` | `/` | Send a text and/or image message |
-| `GET` | `/:chatId` | Page messages (newest page first, then reversed) |
-| `PUT` | `/:chatId/seen` | Mark the other member's unseen messages as seen |
+| Method | Path            | Description                                      |
+| ------ | --------------- | ------------------------------------------------ |
+| `POST` | `/`             | Send a text and/or image message                 |
+| `GET`  | `/:chatId`      | Page messages (newest page first, then reversed) |
+| `PUT`  | `/:chatId/seen` | Mark the other member's unseen messages as seen  |
 
 ### Send message
 
 `multipart/form-data`. Field `image` is optional (jpg, jpeg, png, gif, webp; max 5MB). Images upload to Cloudinary.
 
 ```http
-POST /messages
+POST /api/messages
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 
@@ -238,7 +207,7 @@ At least one of `text` or `image` is required. Sending updates `lastMessage` on 
 ### List messages
 
 ```http
-GET /messages/:chatId?cursor=<messageId>&limit=20
+GET /api/messages/:chatId?cursor=<messageId>&limit=20
 Authorization: Bearer <token>
 ```
 
@@ -247,7 +216,7 @@ Authorization: Bearer <token>
 ### Mark seen
 
 ```http
-PUT /messages/:chatId/seen
+PUT /api/messages/:chatId/seen
 Authorization: Bearer <token>
 ```
 
@@ -257,10 +226,10 @@ Sets `seen` / `seenAt` on messages in that chat that you did not send.
 
 `docker-compose.yml` starts:
 
-| Service | Image | Port | Volume |
-| --- | --- | --- | --- |
+| Service | Image     | Port    | Volume       |
+| ------- | --------- | ------- | ------------ |
 | MongoDB | `mongo:8` | `27017` | `mongo_data` |
-| Redis | `redis:8` | `6379` | `redis_data` |
+| Redis   | `redis:8` | `6379`  | `redis_data` |
 
 Network: `chirp-network`.
 
@@ -270,6 +239,7 @@ Network: `chirp-network`.
 
 - `logger` — Pino (pretty-printed outside production)
 - `TryCatch` — Express async error wrapper
+- `errorHandler` — Express error middleware (used by the gateway)
 - `generateToken` / `verifyToken` — JWT helpers (read `JWT_SECRET` at call time)
 - `connectToRabbitMQ` / `getChannel` / `publishToQueue`
 
