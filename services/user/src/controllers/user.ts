@@ -1,5 +1,11 @@
 import User from "@/model/User.js";
-import { generateToken, publishToQueue, TryCatch } from "@server/shared";
+import {
+  clearAuthCookie,
+  generateToken,
+  publishToQueue,
+  setAuthCookie,
+  TryCatch,
+} from "@server/shared";
 import { type Request, type Response } from "express";
 import redisClient from "@/config/redis.js";
 import bcrypt from "bcryptjs";
@@ -44,9 +50,12 @@ export const loginUser = TryCatch(async (req: Request, res: Response) => {
   // Success — clear the counter so failed attempts before this don't linger.
   await redisClient.del(rateLimitKey);
 
+  const token = generateToken(user._id.toString());
+  setAuthCookie(res, token);
+
   res.status(200).json({
     message: "Login successful",
-    token: generateToken(user._id.toString()),
+    token,
   });
 });
 
@@ -177,11 +186,19 @@ export const verifyOtp = TryCatch(async (req: Request, res: Response) => {
   const userResponse = newUser.toObject();
   delete (userResponse as { password?: string }).password;
 
+  const token = generateToken(newUser._id.toString());
+  setAuthCookie(res, token);
+
   res.status(200).json({
     message: "OTP verified successfully",
     user: userResponse,
-    token: generateToken(newUser._id.toString()),
+    token,
   });
+});
+
+export const logoutUser = TryCatch(async (_req: Request, res: Response) => {
+  clearAuthCookie(res);
+  res.status(200).json({ message: "Logged out successfully" });
 });
 
 export const myProfile = TryCatch(
@@ -238,6 +255,22 @@ export const updateUser = TryCatch(async (req: Request, res: Response) => {
     message: "User updated successfully",
     user,
   });
+});
+
+export const getUserById = TryCatch(async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  if (!userId) {
+    res.status(400).json({ message: "User ID is required" });
+    return;
+  }
+
+  const user = await User.findById(userId).select("-password");
+  if (!user) {
+    res.status(404).json({ message: "User not found" });
+    return;
+  }
+
+  res.status(200).json({ user });
 });
 
 export const getUserByUsername = TryCatch(

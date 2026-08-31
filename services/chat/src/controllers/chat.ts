@@ -22,7 +22,8 @@ export const createChat = TryCatch(async (req: Request, res: Response) => {
     `${process.env.USER_SERVICE_URL}/users/${normalizedUsername}`,
     {
       headers: {
-        Authorization: req.headers.authorization ?? "",
+        "x-internal-secret": process.env.INTERNAL_SECRET ?? "",
+        "x-user-id": myUserId,
       },
     },
   );

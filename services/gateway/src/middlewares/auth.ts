@@ -1,25 +1,32 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { AUTH_COOKIE_NAME } from "@server/shared";
 import { env } from "@/config/env.js";
+
+function readCookie(req: Request, name: string): string | undefined {
+  const header = req.headers.cookie;
+  if (!header) return undefined;
+  const match = header.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]!) : undefined;
+}
+
+function extractToken(req: Request): string | undefined {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.split(" ")[1];
+  }
+  return readCookie(req, AUTH_COOKIE_NAME);
+}
 
 export function authMiddleware(
   req: Request,
   res: Response,
   next: NextFunction,
 ) {
-  const authHeader = req.headers.authorization;
+  const token = extractToken(req);
 
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res
-      .status(401)
-      .json({ message: "Missing or invalid Authorization header" });
-  }
-
-  const token = authHeader.split(" ")[1];
   if (!token) {
-    return res
-      .status(401)
-      .json({ message: "Missing or invalid Authorization header" });
+    return res.status(401).json({ message: "Missing or invalid auth token" });
   }
 
   try {

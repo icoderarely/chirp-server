@@ -18,7 +18,7 @@ export const services: ServiceConfig[] = [
     pathPrefix: "/api/users",
     rewriteTo: "/users",
     requiresAuth: true,
-    publicPaths: ["/login", "/register", "/verify-otp"],
+    publicPaths: ["/login", "/register", "/verify-otp", "/logout"],
   },
   {
     name: "chat",
