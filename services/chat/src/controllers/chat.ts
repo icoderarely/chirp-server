@@ -4,6 +4,7 @@ import axios from "axios";
 import Chat from "@/models/Chat.js";
 import Message from "@/models/Message.js";
 import mongoose from "mongoose";
+import { emitToUser } from "@/config/socket.js";
 
 export const createChat = TryCatch(async (req: Request, res: Response) => {
   const myUserId = req.user?.userId;
@@ -51,6 +52,11 @@ export const createChat = TryCatch(async (req: Request, res: Response) => {
 
   const chat = await Chat.create({
     members: [myUserId, otherUserId],
+  });
+
+  emitToUser(String(otherUserId), "chat:new", {
+    chatId: chat._id.toString(),
+    memberIds: chat.members.map((member) => String(member)),
   });
 
   res.status(201).json({

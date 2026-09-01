@@ -7,6 +7,7 @@ export const env = {
   PORT: required("PORT"),
   MONGODB_URI: required("MONGODB_URI"),
   USER_SERVICE_URL: required("USER_SERVICE_URL"),
+  CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || "http://localhost:5173",
   CLOUDINARY_CLOUD_NAME: required("CLOUDINARY_CLOUD_NAME"),
   CLOUDINARY_API_KEY: required("CLOUDINARY_API_KEY"),
   CLOUDINARY_API_SECRET: required("CLOUDINARY_API_SECRET"),

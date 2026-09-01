@@ -4,10 +4,8 @@ import { logger } from "@server/shared";
 import { connectDB } from "@/config/db.js";
 import chatRoutes from "@/routes/chat.js";
 import messageRoutes from "@/routes/message.js";
-
+import { app, server } from "@/config/socket.js";
 const PORT = process.env.PORT || 3003;
-
-const app = express();
 
 // Middlewares
 app.use(express.json());
@@ -20,7 +18,7 @@ connectDB();
 app.use("/chat", chatRoutes);
 app.use("/messages", messageRoutes);
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   logger.info(`Chat service is running on port ${PORT}`);
 });
 

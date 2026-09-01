@@ -3,9 +3,10 @@ import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import Message from "@/models/Message.js";
 import Chat from "@/models/Chat.js";
+import { emitToUsers, isUserOnline } from "@/config/socket.js";
 
 export const sendMessage = TryCatch(async (req: Request, res: Response) => {
-  const { chatId, text } = req.body;
+  const { chatId, text, replyTo } = req.body;
   const image = req.file;
   const senderId = req.user?.userId;
   if (!senderId) {
@@ -51,9 +52,26 @@ export const sendMessage = TryCatch(async (req: Request, res: Response) => {
     (member) => member.toString() !== senderId,
   );
 
-  // Socket setup
+  if (replyTo) {
+    if (!mongoose.isValidObjectId(replyTo)) {
+      res.status(400).json({
+        message: "Invalid replyTo",
+      });
+      return;
+    }
+    const replyMessage = await Message.findById(replyTo);
+    if (!replyMessage || replyMessage.chatId.toString() !== chat._id.toString()) {
+      res.status(400).json({
+        message: "Invalid replyTo",
+      });
+      return;
+    }
+  }
 
-  let messageData = {
+  const receiverId = otherMemberId ? String(otherMemberId) : "";
+  const delivered = receiverId ? isUserOnline(receiverId) : false;
+
+  const message = new Message({
     chatId,
     sender: senderId,
     text: text ?? undefined,
@@ -64,10 +82,23 @@ export const sendMessage = TryCatch(async (req: Request, res: Response) => {
         }
       : undefined,
     messageType: image ? "image" : "text",
-  };
-
-  const message = new Message(messageData);
+    delivered,
+    ...(delivered ? { deliveredAt: new Date() } : {}),
+    ...(replyTo ? { replyTo } : {}),
+  });
   const savedMessage = await message.save();
+  await savedMessage.populate("replyTo", "_id text image sender messageType");
+
+  if (delivered) {
+    await Message.updateMany(
+      {
+        chatId: new mongoose.Types.ObjectId(String(chatId)),
+        sender: senderId,
+        delivered: { $ne: true },
+      },
+      { $set: { delivered: true, deliveredAt: new Date() } },
+    );
+  }
   const lastMessageText = image ? "Image sent" : (text ?? "");
 
   const updatedChat = await Chat.findByIdAndUpdate(
@@ -81,13 +112,44 @@ export const sendMessage = TryCatch(async (req: Request, res: Response) => {
     },
     { returnDocument: "after" },
   );
-  console.log("updated chat:", updatedChat);
 
-  // Emit to sockets
+  const messageObj = savedMessage.toObject();
+  const memberIds = chat.members.map((member) => member.toString());
+
+  if (delivered) {
+    emitToUsers(memberIds, "message:delivered", {
+      chatId: String(chatId),
+      deliveredTo: receiverId,
+    });
+  }
+
+  emitToUsers(memberIds, "message:new", {
+    _id: messageObj._id,
+    chatId: String(messageObj.chatId),
+    sender: messageObj.sender,
+    text: messageObj.text,
+    image: messageObj.image,
+    messageType: messageObj.messageType,
+    seen: messageObj.seen,
+    delivered: messageObj.delivered,
+    createdAt: messageObj.createdAt,
+    replyTo: messageObj.replyTo ?? null,
+  });
+
+  emitToUsers(memberIds, "chat:updated", {
+    chatId: String(chatId),
+    lastMessage: {
+      text: lastMessageText,
+      sender: senderId,
+    },
+    updatedAt: updatedChat
+      ? updatedChat.updatedAt.toISOString()
+      : new Date().toISOString(),
+  });
 
   res.status(201).json({
     message: {
-      ...savedMessage.toObject(),
+      ...messageObj,
       otherMemberId,
     },
   });
@@ -128,6 +190,18 @@ export const getMessages = TryCatch(async (req: Request, res: Response) => {
     return;
   }
 
+  const otherMemberId = chat.members.find((member) => member.toString() !== userId);
+  if (otherMemberId && isUserOnline(String(otherMemberId))) {
+    await Message.updateMany(
+      {
+        chatId: new mongoose.Types.ObjectId(chatId as string),
+        sender: userId,
+        delivered: { $ne: true },
+      },
+      { $set: { delivered: true, deliveredAt: new Date() } },
+    );
+  }
+
   const pageSize = Math.min(parseInt(limit as string, 10) || 20, 50);
 
   const query: { chatId: mongoose.Types.ObjectId; createdAt?: { $lt: Date } } =
@@ -143,6 +217,7 @@ export const getMessages = TryCatch(async (req: Request, res: Response) => {
   }
 
   const messages = await Message.find(query)
+    .populate("replyTo", "_id text image sender messageType")
     .sort({ createdAt: -1 })
     .limit(pageSize + 1); // fetch one extra to know if there's a next page
 
@@ -197,10 +272,16 @@ export const markAsSeen = TryCatch(async (req: Request, res: Response) => {
       sender: { $ne: userId },
       seen: false,
     },
-    { $set: { seen: true, seenAt: new Date() } },
+    { $set: { seen: true, seenAt: new Date(), delivered: true, deliveredAt: new Date() } },
   );
 
-  // Emit to sockets — notify sender(s) their messages were seen
+  if (result.modifiedCount > 0) {
+    emitToUsers(
+      chat.members.map((member) => member.toString()),
+      "message:seen",
+      { chatId: String(chatId), seenBy: userId },
+    );
+  }
 
   res.status(200).json({
     message: "Messages marked as seen",

@@ -12,6 +12,9 @@ export interface IMessage {
   messageType: "text" | "image";
   seen: boolean;
   seenAt?: Date;
+  delivered: boolean;
+  deliveredAt?: Date;
+  replyTo?: Types.ObjectId;
   updatedAt?: Date;
   createdAt: Date;
 }
@@ -42,6 +45,15 @@ const messageSchema = new Schema<IMessage>(
       default: false,
     },
     seenAt: { type: Date },
+    delivered: {
+      type: Boolean,
+      default: false,
+    },
+    deliveredAt: { type: Date },
+    replyTo: {
+      type: Schema.Types.ObjectId,
+      ref: "Message",
+    },
   },
   {
     timestamps: true,
