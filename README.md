@@ -57,8 +57,8 @@ Login and verify-otp issue a JWT (`{ userId }`) and set an httpOnly cookie named
 
 - Node.js 22+
 - npm 10+
-- Docker (for MongoDB and Redis)
-- RabbitMQ running locally (`amqp://admin:admin123@localhost:5672` by default). It is **not** included in `docker-compose.yml` yet.
+- Docker (for MongoDB, Redis, and RabbitMQ)
+- RabbitMQ from Compose: `amqp://chirp:67z5uF%40gZq@localhost:5672` (`@` in the password is URL-encoded as `%40`). Management UI: `http://localhost:15672`.
 
 ## Setup
 
@@ -280,8 +280,9 @@ The client never emits chat payloads over the socket. Mutations stay on HTTP; th
 
 | Service | Image     | Port    | Volume       |
 | ------- | --------- | ------- | ------------ |
-| MongoDB | `mongo:8` | `27017` | `mongo_data` |
-| Redis   | `redis:8` | `6379`  | `redis_data` |
+| MongoDB  | `mongo:8`              | `27017`         | `mongo_data`    |
+| Redis    | `redis:8`              | `6379`          | `redis_data`    |
+| RabbitMQ | `rabbitmq:4-management` | `5672`, `15672` | `rabbitmq_data` |
 
 Network: `chirp-network`.
 
